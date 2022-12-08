@@ -11,37 +11,39 @@ Species we chose
 *Purple Martin* - Progne subis
 *Scarlet Tanager* - Piranga olivacea
 *Palm Warbler* - Setophaga palmarum
-*Baltimore Oriole* - Icterus galbula
-*Eastern Kingbird* - Tyrannus tyrannus
+*Whip-poor-will* - Antrostomus vociferus
+*Barn Swallow* - Hirundo rustica
 
 # Results
 ## Querying
-```{r} 
-cache=TRUE
+```{r, cache=TRUE} 
 library(rgbif)
 library(tidyverse)
 library(MuMIn)
 library(rnoaa)
-library(data.table)
 library(ggmap)
 library(usmap)
 library(magick) #for examples
 library(cowplot) #for examples
 library(lme4) #for linear mixed effect models
 library(car) #for LME anova testing
-library(data.table) #for frollmean function (and others)
+library(rsconnect)
+library(curl)
 
-species <- c("Progne subis","Piranga olivacea","Setophaga palmarum","Icterus galbula","Tyrannus tyrannus")
+species <- c("Progne subis","Piranga olivacea","Setophaga palmarum","Antrostomus vociferus","Hirundo rustica")
 
-y <- paste0("1990",",","2019")
-m <- paste0("3",",","6")
+y <- paste0("2000",",","2019")
+m <- paste0("4",",","5")
+
+handle <- new_handle(verbose = TRUE)
+handle_setopt(handle, http_version = 2)
 
 dat.l <-list()
-for(s in species){
+for (i in species){
   #setting the limit=0 returns no records but can give you the number of observations if you access the meta data
-n.obs <-  occ_data(scientificName = s,year=y,month=m,limit=0,country="US",basisOfRecord = "HUMAN_OBSERVATION",stateProvince="Massachusetts")$meta$count 
-print(n.obs)
-dat.l[[paste0(s)]] <- occ_data(scientificName = s,year=y,month=m, limit=n.obs,country="US", basisOfRecord = "HUMAN_OBSERVATION", stateProvince="Massachusetts")[[2]]
+  n.obs <- occ_data(scientificName = i,year = y,month = m,limit=0,country = "US",basisOfRecord = "HUMAN_OBSERVATION", stateProvince = "Massachusetts")$meta$count
+  print(n.obs)
+  dat.l[[paste0(i)]] <- occ_data(scientificName = i, year=y, month = m, limit = n.obs,country = "US",basisOfRecord = "HUMAN OBSERVATION",stateProvince = "Massachusetts")[[2]]
 }
 dat <- rbindlist(dat.l,fill=T)
 head(dat)
