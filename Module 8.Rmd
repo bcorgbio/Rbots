@@ -3,19 +3,24 @@ title: "Module 8"
 author: "Rbots"
 date: '2022-11-30'
 output: html_document
+bibliography: 
 ---
+# Introduction 
 
-# Questions for Professor Kenaley 
-
+# Methods 
 Species we chose
 *Purple Martin* - Progne subis
 *Scarlet Tanager* - Piranga olivacea
 *Palm Warbler* - Setophaga palmarum
+*Baltimore Oriole* - Icterus galbula
+*Eastern Kingbird* - Tyrannus tyrannus
+
 *Whip-poor-will* - Antrostomus vociferus
 *Barn Swallow* - Hirundo rustica
 
+
 # Results
-## Querying
+## Querying 1 
 ```{r, cache=TRUE} 
 library(rgbif)
 library(tidyverse)
@@ -30,23 +35,33 @@ library(car) #for LME anova testing
 library(rsconnect)
 library(curl)
 
-species <- c("Progne subis","Piranga olivacea","Setophaga palmarum","Antrostomus vociferus","Hirundo rustica")
+species <- c("Progne subis","Piranga olivacea","Setophaga palmarum","Icterus galbula","Tyrannus tyrannus")
 
 y <- paste0("2000",",","2019")
 m <- paste0("4",",","5")
 
-handle <- new_handle(verbose = TRUE)
-handle_setopt(handle, http_version = 2)
-
 dat.l <-list()
-for (i in species){
-  #setting the limit=0 returns no records but can give you the number of observations if you access the meta data
-  n.obs <- occ_data(scientificName = i,year = y,month = m,limit=0,country = "US",basisOfRecord = "HUMAN_OBSERVATION", stateProvince = "Massachusetts")$meta$count
-  print(n.obs)
-  dat.l[[paste0(i)]] <- occ_data(scientificName = i, year=y, month = m, limit = n.obs,country = "US",basisOfRecord = "HUMAN OBSERVATION",stateProvince = "Massachusetts")[[2]]
+
+for(s in species){
+  
+  ## setting the limit=0 returns no records but can give you the number of observations if you access the meta data
+n.obs <-  occ_data(scientificName = s,year=y,month=m,limit=0,country="US",basisOfRecord = "HUMAN_OBSERVATION",stateProvince="Massachusetts")$meta$count 
+
+print(n.obs)
+
+
+dat.l[[paste0(s)]] <- occ_data(scientificName = s,year=y,month=m,
+                               limit=n.obs,country="US",
+                               basisOfRecord = "HUMAN_OBSERVATION",
+                               stateProvince="Massachusetts")[[2]]
+
+
 }
+
 dat <- rbindlist(dat.l,fill=T)
+
 head(dat)
+
 saveRDS(data,"massbird.data.RDS")
 
 dat%>%
@@ -54,7 +69,8 @@ dat%>%
   summarise(count=sum(individualCount,na.rm = T))%>%
   ggplot(aes(x=year,y=count,col=species))+geom_point()
 ```
-## Querying
+
+## Querying 2 
 ```{r}
 cache=TRUE
 options(noaakey = "RrJIqfCapgshUXBCJlyjYvYxZEctURiq")
@@ -173,4 +189,5 @@ best.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),mc.arr.weath2,na.actio
 
 Anova(best.lmer)
 ```
-
+# Discussion
+# References
