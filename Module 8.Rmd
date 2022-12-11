@@ -190,4 +190,9 @@ best.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),mc.arr.weath2,na.actio
 Anova(best.lmer)
 ```
 # Discussion
+#Author Contributions
+Tori:
+Lexi:
+Christopher:
+Eugene:
 # References
