@@ -186,4 +186,10 @@ Anova(best.lmer)
 
 # Discussion
 
+# Author Contributions
+Tori:
+Lexi:
+Christopher:
+Eugene:
+
 # References
