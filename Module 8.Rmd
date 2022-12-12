@@ -3,103 +3,97 @@ title: "Module 8"
 author: "Rbots"
 date: '2022-11-30'
 output: html_document
-bibliography: 
+bibliography: BIOL3140_bibliography
 ---
 # Introduction 
+Trans-Gulf migrants are bird species that fly non-stop over the Gulf of Mexico and arrive on land between Texas and Florida. The date when these individuals arrive has important fitness consequences and now need to be shifted in a changing climate. Trans-Gulf migrants must now shift their arrival data at breeding areas in response to warmer spring temperatures or their populations may decline. There has been significant evidence for advanced spring arrival dates in coordination with warmer temperatures at the arrival destination [sparks2007consistent]. Climate change has the potential to further increase temperatures and cause even earlier arrival times. In recent decades, citizen science has become more popularized as public interest in species conservation has also increased. The Cornell Laboratory of Ornithology and the National Audubon Society have established eBird which amateur birders can use to submit their bird observations. This project uses eBird and meteorological data to study the effect of local weather conditions on the arrival time of Trans-Gulf migrants in Massachusetts.
 
 # Methods 
-Species we chose
-*Purple Martin* - Progne subis
-*Scarlet Tanager* - Piranga olivacea
-*Palm Warbler* - Setophaga palmarum
-*Baltimore Oriole* - Icterus galbula
-*Eastern Kingbird* - Tyrannus tyrannus
+The first thing we had to do for our project was to select 5 different trans-Gulf migrants (TGM). We made sure to pick species which were members of different families of birds. The 5 species we chose were the *Purple Martin* (Progne subis), the *Scarlet Tanager* (Piranga olivacea), the *Palm Warbler* (Setophaga palmarum), the *Baltimore Oriole* (Icterus galbula), and the *Eastern Kingbird* (Tyrannus tyrannus). The data for these birds and their flight paths were obtained from the eBird database compiled by the Cornell lab of Ornithology. In order to collect the data for our birds, we iterated the 5 species of birds we have through the occ_data() function from rgbif. 
 
-*Whip-poor-will* - Antrostomus vociferus
-*Barn Swallow* - Hirundo rustica
-
+*Methods still needs work, quite a bit is missing*
 
 # Results
-## Querying 1 
-```{r, cache=TRUE} 
+```{r, "Loading Libraries"}
 library(rgbif)
 library(tidyverse)
 library(MuMIn)
 library(rnoaa)
 library(ggmap)
 library(usmap)
-library(magick) #for examples
-library(cowplot) #for examples
-library(lme4) #for linear mixed effect models
-library(car) #for LME anova testing
+library(magick)
+library(cowplot)
+library(lme4)
+library(car)
 library(rsconnect)
 library(curl)
+library(data.table)
+library(knitr)
+library(rgdal)
+```
 
+```{r, "Obtaining Specific Bird Data", cache=TRUE} 
+#We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
 species <- c("Progne subis","Piranga olivacea","Setophaga palmarum","Icterus galbula","Tyrannus tyrannus")
-
-y <- paste0("2000",",","2019")
-m <- paste0("4",",","5")
-
+y <- paste0("2000",",","2019") #In the Additional Operations and Analyses section, we are asked to analyze our species from 2000-2019 
+m <- paste0("4",",","5") #In the Additional Operations and Analyses section, we are asked to analyze our species during April and May which correspond to the months 4 and 5 
 dat.l <-list()
-
 for(s in species){
-  
-  ## setting the limit=0 returns no records but can give you the number of observations if you access the meta data
 n.obs <-  occ_data(scientificName = s,year=y,month=m,limit=0,country="US",basisOfRecord = "HUMAN_OBSERVATION",stateProvince="Massachusetts")$meta$count 
-
 print(n.obs)
-
-
 dat.l[[paste0(s)]] <- occ_data(scientificName = s,year=y,month=m,
                                limit=n.obs,country="US",
                                basisOfRecord = "HUMAN_OBSERVATION",
                                stateProvince="Massachusetts")[[2]]
-
-
 }
-
+#This is where the code stopped for Tori last time!
 dat <- rbindlist(dat.l,fill=T)
-
 head(dat)
-
 saveRDS(data,"massbird.data.RDS")
+```
 
+```{r, "Understanding the Numbers We're Dealing With"}
+dat <- readRDS("massbird.data.RDS")
 dat%>%
   group_by(year,species)%>%
   summarise(count=sum(individualCount,na.rm = T))%>%
   ggplot(aes(x=year,y=count,col=species))+geom_point()
 ```
 
-## Querying 2 
-```{r}
-cache=TRUE
+We successfully loaded the species occurrence data in from GBIF’s API, and used this graph to visualize the data we have. The graph above allows us to see the amount of data we have, with the dependency of count of species data on the year in the time range requested (Between April and May in 2000-2019).
+
+```{r, "Loading Weather Station Data", cache=TRUE}
+#We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
 options(noaakey = "RrJIqfCapgshUXBCJlyjYvYxZEctURiq")
 sts <- c(
   "GHCND:USW00013894", #Mobible, AL 2k away about 10 days away @200 km/day
   "GHCND:USW00013881", #Charlotte, NC 1000 km away about 6 days away @200 km/day
   "GHCND:USW00014739" #Boston
 )
-bos <- ncdc_stations(stationid = "GHCND:USW00014739")
-
-print(bos)
-library("rgdal")
 sta.d <- bind_rows( #bind the rows
   lapply(sts,function(x) ncdc_stations(stationid = x)$data ) #use lapply to run through stations
   )%>%
   mutate(usmap_transform(.,input_names = c("longitude","latitude"),output_names = c("longitude.1", "latitude.1")))%>% #join transformation of lat/long for projection with usmap
-  mutate(name=str_sub(name, -5,-4))%>%#simplify the name column, grab just the state
+  mutate(name=str_sub(name, -5,-4))%>% #simplify the name column, grab just the state
   mutate(migr.day=c(10,5,0))%>% #so we can look at wind speed 0, 5 or 10 days before arrive in boston
-  separate(id,into = c("station.type","id"))%>%#need to cut station type out from station id number
-        print()
+  separate(id,into = c("station.type","id"))%>% #need to cut station type out from station id number
+```
 
+```{r, "Graphing Stations"}
 plot_usmap(
   include = c(.northeast_region,.south_region,.east_north_central)
 )+geom_point(data=sta.d,aes(x=longitude.1,y=latitude.1,col=name),size=5)+geom_label(data=sta.d,aes(x=longitude.1,y=latitude.1,col=name,label=name),size=5,nudge_x = 1e6*0.25)+theme(legend.position = "none")
-
-weather.d <- meteo_pull_monitors(sta.d$id,date_min = "2000-01-01")
-head(weather.d)
 ```
-## Data Analysis
+
+The map above shows the three locations from which we are collecting weather data as a visual representation of the distance between the stations.
+
+```{r, "Obtaining Weather Station Data", cache=TRUE}
+#We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
+weather.d <- meteo_pull_monitors(sta.d$id,date_min = "2000-01-01")
+```
+
+#Tori stop here!!!!
+
 ```{r}
 mc<- dat%>%
   filter(species=="Progne subis")%>%
@@ -189,5 +183,7 @@ best.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),mc.arr.weath2,na.actio
 
 Anova(best.lmer)
 ```
+
 # Discussion
+
 # References
