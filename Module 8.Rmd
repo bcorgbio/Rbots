@@ -62,7 +62,7 @@ We successfully loaded the species occurrence data in from GBIF’s API, and use
 
 ```{r, cache=TRUE}
 #We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
-options(noaakey = "RrJIqfCapgshUXBCJlyjYvYxZEctURiq")
+options(noaakey = "GPNjfBVglHVujABdiAesXngwmPtvTiGU")
 sts <- c(
   "GHCND:USW00013894", #Mobible, AL 2k away about 10 days away @200 km/day
   "GHCND:USW00013881", #Charlotte, NC 1000 km away about 6 days away @200 km/day
