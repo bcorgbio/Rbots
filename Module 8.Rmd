@@ -44,7 +44,6 @@ dat.l[[paste0(s)]] <- occ_data(scientificName = s,year=y,month=m,
                                basisOfRecord = "HUMAN_OBSERVATION",
                                stateProvince="Massachusetts")[[2]]
 }
-#This is where the code stopped for Tori last time!
 dat <- rbindlist(dat.l,fill=T)
 head(dat)
 saveRDS(data,"massbird.data.RDS")
@@ -64,7 +63,7 @@ We successfully loaded the species occurrence data in from GBIF’s API, and use
 #We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
 options(noaakey = "GPNjfBVglHVujABdiAesXngwmPtvTiGU")
 sts <- c(
-  "GHCND:USW00013894", #Mobible, AL 2k away about 10 days away @200 km/day
+  "GHCND:USW00013894", #Mobile, AL 2k away about 10 days away @200 km/day
   "GHCND:USW00013881", #Charlotte, NC 1000 km away about 6 days away @200 km/day
   "GHCND:USW00014739" #Boston
 )
@@ -241,7 +240,7 @@ ek%>%
   ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=ek.pred,aes(x=j.day,y=pred),col="coral1",size=2)+facet_wrap(year~.)
 ```
 
-CAPTION
+After looking at the logistic models of each of the species, our group came to the conclusion that species arrive periodically in the months. Some species arrive earlier, while other species arrive later. This accounts for the effect the temperature *within* the year has, but now we need to look at the effect that years have had over time (i.e. how changing overall temperatures over the years have effected the time of arrival of these species)
 
 ```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Purple Martin"}
 #Progne subis or The Purple Martin
@@ -288,7 +287,7 @@ ek.arrive.date%>%
   ggplot(aes(year,j.day))+geom_point()
 ```
 
-For each of the species we analyzed, the results that we found from this data do not show much of a pattern between the arrival date from year to year, so we will determine how weather might have an effect on the migration pattern of the species annually.
+For each of the species we analyzed, the results that we found from this data do not show much of a pattern between the arrival date from *year to year*, so we will determine how weather might have an effect on the migration pattern of the species annually.
 
 ```{r}
 #Progne subis or The Purple Martin
@@ -355,7 +354,7 @@ kable(anova.ek,caption="Eastern Kingbird")
 yw.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),yw.arr.weath,na.action = "na.fail")
 ```
 
-CAPTION
+As instructed in the module for this project, we conducted linear mixed-effect modeling to analyze our data. Our data set is fairly complicated, which is why we require this type of modeling to come to conclusions. We have some fixed effect variables and some that are random effect variables, so we needed to perform an analysis that would be able to account for both the fixed and random effects. That analysis is called a mixed effect model! In this module, we were interested in the fixed effects of temperature and wind on arrival time and understand the random relationship between location and weather variables to the data. This first linear model we conducted looked at the data from weather stations on individual days to see the random effect of station location and fixed effect of weather on arrival date. We then performed Anova tests to see the linear model's fit to the data we collected, and the results that we found show that there isn't a clear relationship between weather and arrival day based on the variables tested so far.
 
 ```{r}
 pm.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name),pm.arr.weath2,na.action = "na.fail")
@@ -375,7 +374,7 @@ anova.ek2 <- Anova(ek.lmer2)
 kable(anova.ek2,caption="Eastern Kingbird")
 ```
 
-CAPTION
+The second linear model we conducted had a similar set up to the first one with both random and fixed variables from the databases we accessed earlier (mentioned in the methods section). In the first set of data, we used the single-day weather from the database, but in this data we made an adjustment. We calculated an average of weather data variables over a 2-week period in order to give ourselves some wiggle room for the birds that are not arriving or leaving at the same time within these arrival times. With this analysis, we saw some effects that were significant. All of the variables seemed to have a significant effect on the arrival date with the species we chose. 
 
 ```{r}
 pm.arr.aic1 <- dredge(pm.lmer,fixed = c("tmin","tmax","wvec"),)
@@ -390,7 +389,7 @@ ek.arr.aic1 <- dredge(ek.lmer,fixed = c("tmin","tmax","wvec"),)
 kable(ek.arr.aic1[1:4,],caption = "Fit values for nested models of the most complicated lme model for Eastern Kingbird")
 ```
 
-CAPTION
+Next, we used the dredge function to find the best fit model in a different way. The dredge function analyzed the interactions between wk.tmin, wk.tmax, and wk.wvec. In each of the data tables we have created above, we are looking at the 3 weather variables as fixed effects and determining the best fitting models from that, and we can see the best fitting models for each of the species and their effects on arrival date.
 
 ```{r}
 pm.arr.aic <- dredge(pm.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
@@ -405,7 +404,7 @@ ek.arr.aic <- dredge(ek.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
 kable(ek.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for Eastern Kingbird")
 ```
 
-CAPTION
+This model that we conducted uses the weather data from our average of 2-weeks of weather variables to find the best of model. In each of the data tables we have created above, we are looking at the 3 weather variables as fixed effects and determining the best fitting models from that, and we can see the best fitting models for each of the species and their effects on arrival date.
 
 ```{r,"best fitting models -- single day data"}
 best.pm.lmer1 <-  lmer(j.day~tmin+tmax+wvec+(1|name),pm.arr.weath,na.action = "na.fail")
@@ -443,7 +442,11 @@ bestek <- Anova(best.ek.lmer)
 kable(bestek,caption="Eastern Kingbird")
 ```
 
-CAPTIONS
+The tables above are looking at the 3 weather variables as fixed effects and determining the best fitting models from that using the Anova values. We can see that there is a degree of significance in the data that indicates a fixed effect on the date of arrival of the species.
+
+## Additional Operations and Analyses 
+  
+Given such a wide range of data to analyze, we wanted to compare the arrival date of different species to each other. We wanted to see if there would be an effect between the individual species, because we saw from previous tables that there could be certain correlations defined. We used the methods that Professor Kenaley taught us throughout the modules and in the module 8 readings to use the data from weather stations and species data and treat those as random variables. Then, we looked at the relationship between the date that species arrive and the weather of the locations and time periods.
 
 ```{r,"additional analysis",cache=TRUE}
 #establishing arrival date for estimate of all species logistic model 
@@ -476,12 +479,16 @@ anova.bestmodel <- Anova(best.alldat.lmer)
 kable(anova.bestmodel,caption = "ANOVA values for best fit linear model of all species")
 ```
 
-DISCUSSION
+As we can see in the Anova table, there is a relationship between these variables. This means that the arrival date for the species along with the weather has a significant relationship, based on the Anova table we generated above. We made sure to take into account location and species as random effects sot hat we could focus on the fixed effects of the other data! These are really exciting results!
+  
+# Discussion
+
+In this Module, we analyzed the relationship between arrival time of various species of trans-Gulf migrants or TGMs with weather and arrival time. The weather conditions we studied included temperature and wind. The trans-Gulf migrants that we studied included the following: the *Purple Martin* (Progne subis), the *Scarlet Tanager* (Piranga olivacea), the *Palm Warbler* (Setophaga palmarum), the *Baltimore Oriole* (Icterus galbula), and the *Eastern Kingbird* (Tyrannus tyrannus). This module allows us to see the impacts that climate change has on populations of species migrating and the arrival time that this migration occurs. Climate change directly relates to many determinants of population size and health including weather patterns, availability of nourishing food, and temperature. Our results showed, as discussed above, that the arrival dates of TGMs for the months of April and May between 2000 and 2019 did not have a clear or consistent pattern as one might have expected. We continued analysis by conducting linear models based on the effect of weather data from an average of 2-weeks of data rather than individual days of data. We measured the linear model for three variables which include minimum temperature (tmin), maximum temperature (tmax), and wind velocity (wvec) and noticed significant values for all of these variables. Through our analysis, we were able to determine that weather conditions did have an effect on the Julian day or j.day of our TGMs. The best fit model for each of our five chosen species unsurprisingly contained all three variables, tmin, tmax, and wvec, which showed that all weather variables had an effect on arrival date of our chosen species. While our data showed a correlation, we did not find definitive results to indicate what effect these conditions had on the population exactly, but we know they have an effect. Doing some research, we related our findings to literature written on similar subjects in the past, and many of our findings seem to correlate to what was found years ago. Richardson conducts a study on the effects of daily changes in weather on numbers of birds taking off on migration @richardson1978timing. He has done a more in depth study in the past and found similar findings in his updated review @richardson1990timing. He found a clear relationship between meteorological conditions/weather on arrival times. He outlines a relationship between weather and the number of birds aloft daily, as detected by various different field methods in different studies, but he found discrepancies among the species as well as the locations or the random variable we knew would have an effect. Both of these studies do not indicate a clear direction that conditions are pushing migration into (earlier or later arrival dates), so this also lines up with the findings of our study. A primary research article we read set out to understand the species-specific effects of climate on autumn phenology. So, while they focused on a different time of year, their results were definitely interesting to our group. They determined that radar studies have repeatedly indicated strong relationships between non-species-specific migration intensity and weather conditions. They studied 10 species and determined that wind during the autumn migration period were more frequent and had an important influence on the autumn migration timing. Also, for some species, they found that temperature and precipitation at breeding areas also played important roles in arrival dates! Regardless of the direction that climate change has on migration, it is clear that we need to continue studying the changes in weather on arrival times of various species of birds. At a larger scale, studies like these can help us determine a lot about the local bird populations and hopefully spark more interest in lowering the impacts of climate change.
 
 # Author Contributions
-Tori: Introduction
-Lexi: Results
-Christopher: 
+Tori: Introduction and Results
+Lexi: Results, Methods, and Discussion
+Christopher:
 Eugene: Methods
 
 # References
