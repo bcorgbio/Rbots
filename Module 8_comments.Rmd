@@ -624,7 +624,7 @@ Christopher:
 Eugene: Methods
 
 <div class="comment">
-Overall a laudable effort with lots of great analysis and visualization. However, I'm not sure how you ever got this to produce a document because so much of the code had variables that weren't established. Looks like this was pieced together, but never really checked to make sure it all ran without erros.
+Overall a laudable effort with lots of great analysis and visualization. However, I'm not sure how you ever got this to produce a document because so much of the code had variables that weren't established. Looks like this was pieced together, but never really checked to make sure it all ran without errors.
 
 ```{r}
 print(grade)
