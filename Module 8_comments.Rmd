@@ -1,0 +1,635 @@
+---
+title: "Module 8"
+author: "Rbots"
+date: '2022-11-30'
+output: html_document
+bibliography: BIOL3140.bib
+---
+
+<!-- for comments -->
+<style>
+div.comment pre { background-color:#ffbbbb; }
+div.comment pre.r { background-color:#ffbbbb; }
+div.comment {color: red;}
+</style>
+
+# Introduction 
+Trans-Gulf migrants are bird species that fly non-stop over the Gulf of Mexico and arrive on land between Texas and Florida. The date when these individuals arrive has important fitness consequences and now need to be shifted in a changing climate. Trans-Gulf migrants must now shift their arrival data at breeding areas in response to warmer spring temperatures or their populations may decline. There has been significant evidence for advanced spring arrival dates in coordination with warmer temperatures at the arrival destination [sparks2007consistent]. Climate change has the potential to further increase temperatures and cause even earlier arrival times. In recent decades, citizen science has become more popularized as public interest in species conservation has also increased. The Cornell Laboratory of Ornithology and the National Audubon Society have established eBird which amateur birders can use to submit their bird observations. This project uses eBird and meteorological data to study the effect of local weather conditions on the arrival time of Trans-Gulf migrants in Massachusetts.
+
+# Methods 
+The first thing we had to do for our project was to select 5 different trans-Gulf migrants (TGM). We made sure to pick species which were members of different families of birds. The 5 species we chose were the *Purple Martin* (Progne subis), the *Scarlet Tanager* (Piranga olivacea), the *Palm Warbler* (Setophaga palmarum), the *Baltimore Oriole* (Icterus galbula), and the *Eastern Kingbird* (Tyrannus tyrannus). The data for these birds and their flight paths were obtained from the eBird database compiled by the Cornell lab of Ornithology. In order to collect the data for our birds, we iterated the 5 species of birds we have through the occ_data() function from rgbif. With this data, we were able to determine the Julian day for each species and analyze the effect that temperature and wind had on the migration route of these various birds to Massachusetts. Professor Kenaley chose three locations along the migration route to use as pointers in this analysis. The locations he chose, which we maintained for the experiment, included Mobile, Alabama, Charlotte, North Carolina, and Boston, Massachusetts. They works as a good path, with Mobile leading the way and Boston as the destination. We requested a token from the NOAA website and used this to access and download the data. We, then, plotted the eBird data. First we plotted the proportion of the population that has arrived and the predicted time of arrival for each of the various species. The next plot we conducted was to show the change in Julian days over the years from 2000 to 2019. This change in arrival date shows the effect of climate change over time, because we can directly see how changes in climate are impacting the date in which species arrive back in Boston. We used official weather data to calculate the wind direction results. We used the frollmean() function to calculate the average of the weather variables 5 days before the arrival day and 10 days before the arrival day. Finally, we used a Linear Mixed-effect Model for both sets of weather data, ran an Anova test to determine the best fit model, and model tested with dredge().
+
+# Results
+```{r}
+library(rgbif)
+library(tidyverse)
+library(MuMIn)
+library(rnoaa)
+library(ggmap)
+library(usmap)
+library(magick)
+library(cowplot)
+library(lme4)
+library(car)
+library(rsconnect)
+library(curl)
+library(data.table)
+library(knitr)
+library(rgdal)
+```
+
+```{r, cache=TRUE,eval=FALSE} 
+#We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
+species <- c("Progne subis","Piranga olivacea","Setophaga palmarum","Icterus galbula","Tyrannus tyrannus")
+y <- paste0("2000",",","2019") #In the Additional Operations and Analyses section, we are asked to analyze our species from 2000-2019 
+m <- paste0("4",",","5") #In the Additional Operations and Analyses section, we are asked to analyze our species during April and May which correspond to the months 4 and 5 
+dat.l <-list()
+for(s in species[4:5]){
+n.obs <-  occ_data(scientificName = s,year=y,month=m,limit=0,country="US",basisOfRecord = "HUMAN_OBSERVATION",stateProvince="Massachusetts")$meta$count 
+print(n.obs)
+dat.l[[paste0(s)]] <- occ_data(scientificName = s,year=y,month=m,
+                               limit=n.obs,country="US",
+                               basisOfRecord = "HUMAN_OBSERVATION",
+                               stateProvince="Massachusetts")[[2]]
+}
+dat <- rbindlist(dat.l,fill=T)
+head(dat)
+saveRDS(dat,"massbird.data.RDS")
+```
+
+<div class="comment">
+in this chunk above you had `saveRDS(data,"massbird.data.RDS)` not `saveRDS(dat,"massbird.data.RDS)`, so you save a function to this RDS file and I had to run the (long!!) loop to retrieve the ebird records 
+
+```{r}
+grade <- 150
+grade <- grade-3
+```
+</div>
+
+
+```{r}
+dat <- readRDS("massbird.data.RDS")
+dat%>%
+  group_by(year,species)%>%
+  summarise(count=sum(individualCount,na.rm = T))%>%
+  ggplot(aes(x=year,y=count,col=species))+geom_point()
+```
+
+We successfully loaded the species occurrence data in from GBIF’s API, and used this graph to visualize the data we have. The graph above allows us to see the amount of data we have, with the dependency of count of species data on the year in the time range requested (Between April and May in 2000-2019).
+
+```{r, cache=TRUE}
+#We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
+options(noaakey = "GPNjfBVglHVujABdiAesXngwmPtvTiGU")
+sts <- c(
+  "GHCND:USW00013894", #Mobile, AL 2k away about 10 days away @200 km/day
+  "GHCND:USW00013881", #Charlotte, NC 1000 km away about 6 days away @200 km/day
+  "GHCND:USW00014739" #Boston
+)
+sta.d <- bind_rows(#bind the rows 
+  lapply(sts,function(x) ncdc_stations(stationid = x)$data))%>%
+  mutate(usmap_transform(.,input_names = c("longitude","latitude"),output_names = c("longitude.1", "latitude.1")))%>% #join transformation of lat/long for projection with usmap
+  mutate(name=str_sub(name, -5,-4))%>% #simplify the name column, grab just the state
+  mutate(migr.day=c(10,5,0))%>% #so we can look at wind speed 0, 5 or 10 days before arrive in boston
+  separate(id,into = c("station.type","id")) #need to cut station type out from station id number
+```
+
+<div class="comment">
+dangling pipe here, makes chunk unrunnable. Removed
+```{r}
+grade <- 150
+grade <- grade-2
+```
+</div>
+
+```{r}
+plot_usmap(
+  include = c(.northeast_region,.south_region,.east_north_central)
+)+geom_point(data=sta.d,aes(x=longitude.1,y=latitude.1,col=name),size=5)+geom_label(data=sta.d,aes(x=longitude.1,y=latitude.1,col=name,label=name),size=5,nudge_x = 1e6*0.25)+theme(legend.position = "none")
+```
+
+The map above shows the three locations from which we are collecting weather data as a visual representation of the distance between the stations.
+
+```{r, cache=TRUE}
+#We set this code chunk to cache=TRUE, because the code took a significant amount of time to run, and we wanted to prevent having to run it over and over. Instead, the cache remembers the code unless we make a change!
+weather.d <- meteo_pull_monitors(sta.d$id,date_min = "2000-01-01")
+```
+
+```{r}
+tot.dat<- dat%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+tot.dat%>%
+  ggplot(aes(j.day,prop,color=species))+geom_point()+facet_wrap(year~.)
+```
+
+The above graph shows the arrival of each of the species we chose during the period of 2000 through 2019. It's filtered for the months of April and May as well. To analyze this data, species used to categorized the data and logistic models modeled arrival data and estimated the arrival function. 
+
+```{r}
+weather.d <- weather.d%>%
+  mutate(year=as.integer(str_sub(date,1,4)), #add year
+         date=as.Date(date))%>%
+  group_by(year)%>% #group by year so we can compute julian day
+ mutate(j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01"))), #add julian day
+  date2=date,
+  wdir.rad=(180-abs(wdf2-180))*pi/180, #radians so we can use a trig function to compute wind vector, scale degrees first to 180 scale to 2x pi and subtract from 180 (wind comes out of a direction)
+  wvec=cos(wdir.rad)*-1*awnd # we want a negative value for positive value for 2x pi
+  )%>% #store day in new column
+  dplyr::select(id,year,date2,j.day,tmin,tmax,wvec)%>% #select the rows we need
+  left_join(sta.d%>%select(id,name,migr.day))%>% #add the station id info (ie. name)
+  mutate(j.day=j.day+migr.day)#make j.day ahead of BOS according to the migration days away so we can join weather along path
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE,fig.cap="Progne subis or The Purple Martin"}
+#Progne subis or The Purple Martin
+ps<- dat%>%
+  filter(species=="Progne subis")%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+ps.pred <- ps%>%
+  group_by(year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(ps%>%dplyr::select(j.day,date)) ## add date back to tibble
+ps%>%
+  ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=ps.pred,aes(x=j.day,y=pred),col="darkgoldenrod2",size=2)+facet_wrap(year~.)
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Scarlet Tanager"}
+#Piranga olivacea or The Scarlet Tanager
+st<- dat%>%
+  filter(species=="Piranga olivacea")%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+st.pred <- st%>%
+  group_by(year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(st%>%dplyr::select(j.day,date)) ## add date back to tibble
+st%>%
+  ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=st.pred,aes(x=j.day,y=pred),col="deepskyblue1",size=2)+facet_wrap(year~.)
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Palm Warbler"}
+#Setophaga palmarum or The Palm Warbler
+pw<- dat%>%
+  filter(species=="Setophaga palmarum")%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+pw.pred <- pw%>%
+  group_by(year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(pw%>%dplyr::select(j.day,date)) ## add date back to tibble
+pw%>%
+  ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=pw.pred,aes(x=j.day,y=pred),col="chartreuse3",size=2)+facet_wrap(year~.)
+```
+
+```{r,fig.height=5, fig.width=5,fig.cap="The Baltimore Oriole"}
+#Icterus galbula or The Baltimore Oriole
+bo<- dat%>%
+  filter(species=="Icterus galbula")%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+bo.pred <- bo%>%
+  group_by(year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(bo%>%dplyr::select(j.day,date)) ## add date back to tibble
+bo%>%
+  ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=bo.pred,aes(x=j.day,y=pred),col="darkred",size=2)+facet_wrap(year~.)
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE,fig.cap="The Eastern Kingbird",eval=FALSE}
+#Tyrannus tyrannus or The Eastern Kingbird
+ek<- dat%>%
+  filter(species=="Megaceryle alcyon")%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+ek.pred <- ek%>%
+  group_by(year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(ek%>%dplyr::select(j.day,date)) ## add date back to tibble
+ek%>%
+  ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=ek.pred,aes(x=j.day,y=pred),col="coral1",size=2)+facet_wrap(year~.)
+```
+
+<div class="comment">
+umm, this is not the sci name for eastern kingbird (Tyrannus tyrannus), so chunk results in finding no rows after first filter operation.
+
+```{r}
+grade <- 150
+grade <- grade-2
+```
+
+redone here . . . 
+
+```{r, fig.height=5,fig.cap="The Eastern Kingbird"}
+#Tyrannus tyrannus or The Eastern Kingbird
+ek<- dat%>%
+  filter(species=="Tyrannus tyrannus")%>%
+  group_by(year)%>%
+  mutate(date=as.Date(paste0(year,"-",month,"-",day)),
+         j.day=julian(date,origin=as.Date(paste0(unique(year),"-01-01")))
+  )%>%
+  group_by(species,year,j.day,date)%>%
+  summarise(day.tot=sum(individualCount,na.rm=T))%>%
+  group_by(species,year)%>%
+  mutate(prop=cumsum(day.tot/sum(day.tot,na.rm = T)))%>%
+  filter(year>1999)
+ek.pred <- ek%>%
+  group_by(year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(ek%>%dplyr::select(j.day,date)) ## add date back to tibble
+ek%>%
+  ggplot(aes(j.day,prop))+geom_point(aes=0.3)+geom_line(data=ek.pred,aes(x=j.day,y=pred),col="coral1",size=2)+facet_wrap(year~.)
+```
+
+
+But the major issue with the logistic model chunks is that you didn't need to eexcute a chunk for each species. You already did this above, all the species at once. From there, you could have move on to this.
+
+```{r}
+
+all.pred <- tot.dat%>%
+  group_by(species,year)%>%
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(tot.dat%>%dplyr::select(species,j.day,date)) ## add date back to tibble
+
+
+grade <- grade-5
+```
+
+</div>
+
+
+After looking at the logistic models of each of the species, our group came to the conclusion that species arrive periodically in the months. Some species arrive earlier, while other species arrive later. This accounts for the effect the temperature *within* the year has, but now we need to look at the effect that years have had over time (i.e. how changing overall temperatures over the years have effected the time of arrival of these species)
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Purple Martin"}
+#Progne subis or The Purple Martin
+ps.arrive.date <-ps.pred%>%
+  group_by(year)%>%
+  filter(j.day==j.day[which.min(abs(pred-0.25))])
+ps.arrive.date%>%
+  ggplot(aes(year,j.day))+geom_point()
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Scarlet Tanager"}
+#Piranga olivacea or The Scarlet Tanager
+st.arrive.date <-st.pred%>%
+  group_by(year)%>%
+  filter(j.day==j.day[which.min(abs(pred-0.25))])
+st.arrive.date%>%
+  ggplot(aes(year,j.day))+geom_point()
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Palm Warbler"}
+#Setophaga palmarum or The Palm Warbler
+pw.arrive.date <-pw.pred%>%
+  group_by(year)%>%
+  filter(j.day==j.day[which.min(abs(pred-0.25))])
+pw.arrive.date%>%
+  ggplot(aes(year,j.day))+geom_point()
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Baltimore Oriole"}
+#Icterus galbula or The Baltimore Oriole
+bo.arrive.date <-bo.pred%>%
+  group_by(year)%>%
+  filter(j.day==j.day[which.min(abs(pred-0.25))])
+bo.arrive.date%>%
+  ggplot(aes(year,j.day))+geom_point()
+```
+
+```{r, fig.height=5, fig.width=5, cache=TRUE, fig.cap="The Eastern Kingbird"}
+#Tyrannus tyrannus or The Eastern Kingbird
+ek.arrive.date <-ek.pred%>%
+  group_by(year)%>%
+  filter(j.day==j.day[which.min(abs(pred-0.25))])
+ek.arrive.date%>%
+  ggplot(aes(year,j.day))+geom_point()
+```
+
+
+
+For each of the species we analyzed, the results that we found from this data do not show much of a pattern between the arrival date from *year to year*, so we will determine how weather might have an effect on the migration pattern of the species annually.
+
+
+<div class="comment">
+I don't see any `pm.arrive.date`, you meant `ps.arrive.date`, right?
+```{r}
+grade <- grade-2
+```
+
+</div>
+
+```{r}
+#Progne subis or The Purple Martin
+pm.arr.weath <- ps.arrive.date%>%
+  left_join(weather.d)%>%
+  left_join(ps%>%dplyr::select(year,date,j.day))
+#Piranga olivacea or The Scarlet Tanager 
+st.arr.weath <- st.arrive.date%>%
+  left_join(weather.d)%>%
+  left_join(st%>%dplyr::select(year,date,j.day))
+#Setophaga palmarum or The Palm Warbler 
+pw.arr.weath <- pw.arrive.date%>%
+  left_join(weather.d)%>%
+  left_join(pw%>%dplyr::select(year,date,j.day))
+#Icterus galbula or The Baltimore Oriole 
+bo.arr.weath <- bo.arrive.date%>%
+  left_join(weather.d)%>%
+  left_join(bo%>%dplyr::select(year,date,j.day))
+#Tyrannus tyrannus or The Eastern Kingbird
+ek.arr.weath <- ek.arrive.date%>%
+  left_join(weather.d)%>%
+  left_join(ek%>%dplyr::select(year,date,j.day))
+```
+
+```{r}
+weather.wk <-weather.d %>% 
+  group_by(year,name) %>% 
+  mutate(wk.tmin = frollmean(tmin, n=14,align="right"),
+         wk.tmax = frollmean(tmax, n=14,align="right"),
+         wk.wvec = frollmean(wvec, n=14,align="right")
+  )%>%
+  dplyr::select(j.day,date2,name,wk.tmin,wk.tmax,wk.wvec)
+```
+
+<div class="comment">
+Again, you are working on variables that don't exist, eg. `mea.arrive.date`.
+```{r}
+grade <- grade-3
+```
+
+</div>
+```{r}
+#pm.arr.weath2 <- mea.arrive.date%>%
+pm.arr.weath2 <- ps.arrive.date%>%
+  left_join(weather.wk)
+st.arr.weath2 <- st.arrive.date%>%
+  left_join(weather.wk)
+pw.arr.weath2 <- pw.arrive.date%>%
+  left_join(weather.wk)
+bo.arr.weath2 <- bo.arrive.date%>%
+  left_join(weather.wk)
+ek.arr.weath2 <- ek.arrive.date%>%
+  left_join(weather.wk)
+```
+
+```{r}
+pm.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),pm.arr.weath,na.action = "na.fail")
+anova.pm <- Anova(pm.lmer)
+kable(anova.pm,caption= "Purple Martin")
+st.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),st.arr.weath,na.action = "na.fail")
+anova.st <- Anova(st.lmer)
+kable(anova.st,caption = "Scarlet Tanager")
+pw.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),pw.arr.weath,na.action = "na.fail")
+anova.pw <- Anova(pw.lmer)
+kable(anova.pw,caption="Palm Warbler")
+bo.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),bo.arr.weath,na.action = "na.fail")
+anova.bo <- Anova(bo.lmer)
+kable(anova.bo,caption="Baltimore Oriole")
+ek.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),ek.arr.weath,na.action = "na.fail")
+anova.ek <- Anova(ek.lmer)
+kable(anova.ek,caption="Eastern Kingbird")
+
+
+##yw.lmer <- lmer(j.day~tmin*tmax*wvec+(1|name),yw.arr.weath,na.action = "na.fail") #no data for this (cpk)
+```
+<div class="comment">
+How can you run a model on a table you don't establish?
+```{r}
+grade <- grade-3
+```
+
+</div>
+
+As instructed in the module for this project, we conducted linear mixed-effect modeling to analyze our data. Our data set is fairly complicated, which is why we require this type of modeling to come to conclusions. We have some fixed effect variables and some that are random effect variables, so we needed to perform an analysis that would be able to account for both the fixed and random effects. That analysis is called a mixed effect model! In this module, we were interested in the fixed effects of temperature and wind on arrival time and understand the random relationship between location and weather variables to the data. This first linear model we conducted looked at the data from weather stations on individual days to see the random effect of station location and fixed effect of weather on arrival date. We then performed Anova tests to see the linear model's fit to the data we collected, and the results that we found show that there isn't a clear relationship between weather and arrival day based on the variables tested so far.
+
+```{r}
+pm.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name),pm.arr.weath2,na.action = "na.fail")
+anova.pm2 <- Anova(pm.lmer2)
+kable(anova.pm2,caption = "Purple Martin")
+st.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name),st.arr.weath2,na.action = "na.fail")
+anova.st2 <- Anova(st.lmer2)
+kable(anova.st2,caption="Scarlet Tanager")
+pw.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name),pw.arr.weath2,na.action = "na.fail")
+anova.pw2 <- Anova(pw.lmer2)
+kable(anova.pw2,caption="Palm Warbler")
+bo.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name),bo.arr.weath2,na.action = "na.fail")
+anova.bo2 <- Anova(bo.lmer2)
+kable(anova.bo2,caption="Baltimore Oriole")
+ek.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name),ek.arr.weath2,na.action = "na.fail")
+anova.ek2 <- Anova(ek.lmer2)
+kable(anova.ek2,caption="Eastern Kingbird")
+```
+
+The second linear model we conducted had a similar set up to the first one with both random and fixed variables from the databases we accessed earlier (mentioned in the methods section). In the first set of data, we used the single-day weather from the database, but in this data we made an adjustment. We calculated an average of weather data variables over a 2-week period in order to give ourselves some wiggle room for the birds that are not arriving or leaving at the same time within these arrival times. With this analysis, we saw some effects that were significant. All of the variables seemed to have a significant effect on the arrival date with the species we chose. 
+
+```{r}
+pm.arr.aic1 <- dredge(pm.lmer,fixed = c("tmin","tmax","wvec"),)
+kable(pm.arr.aic1[1:4,],caption = "Fit values for nested models of the most complicated lme model for Purple Martin")
+st.arr.aic1 <- dredge(st.lmer,fixed = c("tmin","tmax","wvec"),)
+kable(st.arr.aic1[1:4,],caption = "Fit values for nested models of the most complicated lme model for Scarlet Tanager")
+pw.arr.aic1 <- dredge(pw.lmer,fixed = c("tmin","tmax","wvec"),)
+kable(pw.arr.aic1[1:4,],caption = "Fit values for nested models of the most complicated lme model for Palm Warbler")
+bo.arr.aic1 <- dredge(bo.lmer,fixed = c("tmin","tmax","wvec"),)
+kable(bo.arr.aic1[1:4,],caption = "Fit values for nested models of the most complicated lme model for Baltimore Oriole")
+ek.arr.aic1 <- dredge(ek.lmer,fixed = c("tmin","tmax","wvec"),)
+kable(ek.arr.aic1[1:4,],caption = "Fit values for nested models of the most complicated lme model for Eastern Kingbird")
+```
+
+Next, we used the dredge function to find the best fit model in a different way. The dredge function analyzed the interactions between wk.tmin, wk.tmax, and wk.wvec. In each of the data tables we have created above, we are looking at the 3 weather variables as fixed effects and determining the best fitting models from that, and we can see the best fitting models for each of the species and their effects on arrival date.
+
+```{r}
+pm.arr.aic <- dredge(pm.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
+kable(pm.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for Purple Martin")
+st.arr.aic <- dredge(st.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
+kable(st.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for Scarlet Tanager")
+pw.arr.aic <- dredge(pw.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
+kable(pw.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for Palm Warbler")
+bo.arr.aic <- dredge(bo.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
+kable(bo.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for Baltimore Oriole")
+ek.arr.aic <- dredge(ek.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
+kable(ek.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for Eastern Kingbird")
+```
+
+This model that we conducted uses the weather data from our average of 2-weeks of weather variables to find the best of model. In each of the data tables we have created above, we are looking at the 3 weather variables as fixed effects and determining the best fitting models from that, and we can see the best fitting models for each of the species and their effects on arrival date.
+
+```{r,"best fitting models -- single day data"}
+best.pm.lmer1 <-  lmer(j.day~tmin+tmax+wvec+(1|name),pm.arr.weath,na.action = "na.fail")
+bestpm1 <- Anova(best.pm.lmer1)
+kable(bestpm1,caption="Purple Martin")
+best.st.lmer1 <-  lmer(j.day~tmin+tmax+wvec+(1|name),st.arr.weath,na.action = "na.fail")
+bestst1 <- Anova(best.st.lmer1)
+kable(bestst1,caption="Scarlet Tanager")
+best.pw.lmer1 <-  lmer(j.day~tmin+tmax+wvec+(1|name),pw.arr.weath,na.action = "na.fail")
+bestpw1 <- Anova(best.pw.lmer1)
+kable(bestpw1,caption="Palm Warbler")
+best.bo.lmer1 <-  lmer(j.day~tmin+tmax+wvec+(1|name),bo.arr.weath,na.action = "na.fail")
+bestbo1 <- Anova(best.bo.lmer1)
+kable(bestbo1,caption="Baltimore Oriole")
+best.ek.lmer1 <-  lmer(j.day~tmin+tmax+wvec+(1|name),ek.arr.weath,na.action = "na.fail")
+bestek1 <- Anova(best.ek.lmer1)
+kable(bestek1,caption="Eastern Kingbird")
+```
+
+```{r,"best fitting models average weather data"}
+best.pm.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),pm.arr.weath2,na.action = "na.fail")
+bestpm <- Anova(best.pm.lmer)
+kable(bestpm,caption="Purple Martin")
+best.st.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),st.arr.weath2,na.action = "na.fail")
+bestst <- Anova(best.st.lmer)
+kable(bestst,caption="Scarlet Tanager")
+best.pw.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),pw.arr.weath2,na.action = "na.fail")
+bestpw <- Anova(best.pw.lmer)
+kable(bestpw,caption="Palm Warbler")
+best.bo.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),bo.arr.weath2,na.action = "na.fail")
+bestbo <- Anova(best.bo.lmer)
+kable(bestbo,caption="Baltimore Oriole")
+best.ek.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name),ek.arr.weath2,na.action = "na.fail")
+bestek <- Anova(best.ek.lmer)
+kable(bestek,caption="Eastern Kingbird")
+```
+
+The tables above are looking at the 3 weather variables as fixed effects and determining the best fitting models from that using the Anova values. We can see that there is a degree of significance in the data that indicates a fixed effect on the date of arrival of the species.
+
+## Additional Operations and Analyses 
+  
+Given such a wide range of data to analyze, we wanted to compare the arrival date of different species to each other. We wanted to see if there would be an effect between the individual species, because we saw from previous tables that there could be certain correlations defined. We used the methods that Professor Kenaley taught us throughout the modules and in the module 8 readings to use the data from weather stations and species data and treat those as random variables. Then, we looked at the relationship between the date that species arrive and the weather of the locations and time periods.
+
+
+
+<div class="comment">
+You repeated so much analysis for each species and what's below is all that needed to be done to answer the question. However, where did `all.dat` come from? It's not established anywhere. Did you mean `tot.dat`. If so, I added it. And see lots of other things in here that prevent this from running.
+</div>
+```{r,"additional analysis",cache=TRUE}
+#establishing arrival date for estimate of all species logistic model 
+#all.dat.pred <- all.dat%>%
+all.dat.pred <- tot.dat %>% 
+  group_by(species,year)%>% #added species here (CPK)
+  summarize(
+    pred=predict(nls(prop~SSlogis(j.day,Asym, xmid, scal)),newdata=data.frame(j.day=min(j.day):max(j.day))),#predict the logistic curve for each species
+    j.day=min(j.day):max(j.day),
+  )%>%
+  left_join(tot.dat%>%dplyr::select(j.day,date)) ## add date back to tibble
+alldat.arrive.date <-all.dat.pred%>%
+  group_by(species,year)%>% #added species here (CPK)
+  filter(j.day==j.day[which.min(abs(pred-0.25))])
+#combining with weater means (staggered bc they're all coming at different times)
+alldat.arr.weath <- alldat.arrive.date%>%
+  left_join(weather.d)%>%
+  left_join(tot.dat%>%dplyr::select(year,date,j.day))
+alldat.arr.weath2 <- alldat.arrive.date%>%
+  left_join(weather.wk)
+#linear model 1 
+alldat.lmer2 <- lmer(j.day~wk.tmin*wk.tmax*wk.wvec+(1|name)+(1|species),alldat.arr.weath2,na.action = "na.fail")
+anova.all <- Anova(alldat.lmer2)
+kable(anova.all,caption="ANOVA values for linear model of all 6 species")
+#secondary model 
+alldat.arr.aic <- dredge(alldat.lmer2,fixed = c("wk.tmin","wk.tmax","wk.wvec"),)
+#kable(pv.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for all species") #you meant alldat.arr.aic.
+
+kable(alldat.arr.aic[1:4,],caption = "Fit values for nested models of the most complicated lme model for all species")
+
+#all data best model 
+best.alldat.lmer <-  lmer(j.day~wk.tmin+wk.tmax+wk.wvec+(1|name)+(1|species),alldat.arr.weath2,na.action = "na.fail")
+anova.bestmodel <- Anova(best.alldat.lmer)
+kable(anova.bestmodel,caption = "ANOVA values for best fit linear model of all species")
+```
+
+As we can see in the Anova table, there is a relationship between these variables. This means that the arrival date for the species along with the weather has a significant relationship, based on the Anova table we generated above. We made sure to take into account location and species as random effects sot hat we could focus on the fixed effects of the other data! These are really exciting results!
+
+<div class="comment">
+What specifically were the significant relationships?
+```{r}
+grade <- grade-3
+```
+</div>
+
+
+# Discussion
+
+In this Module, we analyzed the relationship between arrival time of various species of trans-Gulf migrants or TGMs with weather and arrival time. The weather conditions we studied included temperature and wind. The trans-Gulf migrants that we studied included the following: the *Purple Martin* (Progne subis), the *Scarlet Tanager* (Piranga olivacea), the *Palm Warbler* (Setophaga palmarum), the *Baltimore Oriole* (Icterus galbula), and the *Eastern Kingbird* (Tyrannus tyrannus). This module allows us to see the impacts that climate change has on populations of species migrating and the arrival time that this migration occurs. Climate change directly relates to many determinants of population size and health including weather patterns, availability of nourishing food, and temperature. Our results showed, as discussed above, that the arrival dates of TGMs for the months of April and May between 2000 and 2019 did not have a clear or consistent pattern as one might have expected. We continued analysis by conducting linear models based on the effect of weather data from an average of 2-weeks of data rather than individual days of data. We measured the linear model for three variables which include minimum temperature (tmin), maximum temperature (tmax), and wind velocity (wvec) and noticed significant values for all of these variables. Through our analysis, we were able to determine that weather conditions did have an effect on the Julian day or j.day of our TGMs. The best fit model for each of our five chosen species unsurprisingly contained all three variables, tmin, tmax, and wvec, which showed that all weather variables had an effect on arrival date of our chosen species. While our data showed a correlation, we did not find definitive results to indicate what effect these conditions had on the population exactly, but we know they have an effect. Doing some research, we related our findings to literature written on similar subjects in the past, and many of our findings seem to correlate to what was found years ago. Richardson conducts a study on the effects of daily changes in weather on numbers of birds taking off on migration @richardson1978timing. He has done a more in depth study in the past and found similar findings in his updated review @richardson1990timing. He found a clear relationship between meteorological conditions/weather on arrival times. He outlines a relationship between weather and the number of birds aloft daily, as detected by various different field methods in different studies, but he found discrepancies among the species as well as the locations or the random variable we knew would have an effect. Both of these studies do not indicate a clear direction that conditions are pushing migration into (earlier or later arrival dates), so this also lines up with the findings of our study. A primary research article we read set out to understand the species-specific effects of climate on autumn phenology. So, while they focused on a different time of year, their results were definitely interesting to our group. They determined that radar studies have repeatedly indicated strong relationships between non-species-specific migration intensity and weather conditions. They studied 10 species and determined that wind during the autumn migration period were more frequent and had an important influence on the autumn migration timing. Also, for some species, they found that temperature and precipitation at breeding areas also played important roles in arrival dates! Regardless of the direction that climate change has on migration, it is clear that we need to continue studying the changes in weather on arrival times of various species of birds. At a larger scale, studies like these can help us determine a lot about the local bird populations and hopefully spark more interest in lowering the impacts of climate change.
+
+<div class="comment">
+Decent discussion, but the last bit of code that analyzed all the species at once did show a relationship with imp weather variables. I think you umissed this by focusing on individual species. The lmer models were introduced in the module so that you could look at the overall effects of some variables while controlling for some that aren't so important (i.e. random effects, species in this case) and could add some noise that obscures the patterns you would otherwise see. 
+
+</div>
+
+
+
+# Author Contributions
+Tori: Introduction and Results
+Lexi: Results, Methods, and Discussion
+Christopher:
+Eugene: Methods
+
+<div class="comment">
+Overall a laudable effort with lots of great analysis and visualization. However, I'm not sure how you ever got this to produce a document because so much of the code had variables that weren't established. Looks like this was pieced together, but never really checked to make sure it all ran without erros.
+
+```{r}
+print(grade)
+```
+
+</div>
+
+# References
